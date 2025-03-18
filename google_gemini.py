@@ -31,7 +31,6 @@ def recommend_movies_with_exact_genre(movie_name, top_n=5):
 
     # **步驟 1：找出用戶輸入的電影類型（精確匹配）**
     movie_row = movie_code_df[movie_code_df["movie_title"] == movie_name]
-
     if movie_row.empty:
         return f"❌ 抱歉，找不到電影「{movie_name}」的類型資訊。"
 
@@ -49,7 +48,7 @@ def recommend_movies_with_exact_genre(movie_name, top_n=5):
     if filtered_movies.empty:
         return f"❌ 沒有找到與「{movie_name}」類型完全相同的電影。"
 
-    # **步驟 3：取得這些電影的劇情描述（確保來自 dataMovie.csv）**
+    # **步驟 3：取得這些電影的劇情描述**
     filtered_movie_titles = filtered_movies["movie_title"].tolist()
     filtered_movie_data = df[df["movie_title"].isin(filtered_movie_titles)][["movie_title", "movie_genre", "movie_description"]]
 
@@ -59,17 +58,31 @@ def recommend_movies_with_exact_genre(movie_name, top_n=5):
     # **步驟 4：讓 Gemini 進行文本分析**
     movie_info = df[df["movie_title"] == movie_name].iloc[0]  # 確保完全匹配
 
-    context = f"用戶輸入的電影：{movie_info['movie_title']}\n類型：{', '.join(matching_genres)}\n描述：{movie_info['movie_description']}\n"
-    context += "請根據以下電影數據，分析哪幾部電影與輸入的電影最相似，並給出推薦理由：\n"
+    context = f"""用戶輸入的電影：{movie_info['movie_title']}
+類型：{', '.join(matching_genres)}
+描述：{movie_info['movie_description']}
 
-    # 限制 Gemini 分析的電影數量，避免 API 輸入過長
-    for _, row in filtered_movie_data.head(10).iterrows():  # 只取前 10 部電影
+以下是與此電影**完全相同分類**的電影數據，請**只從這些電影**中進行推薦：
+"""
+    for _, row in filtered_movie_data.iterrows():
         context += f"電影名稱：{row['movie_title']}，類型：{row['movie_genre']}，描述：{row['movie_description']}\n"
-
+    
+    context += f"\n請分析電影「{movie_name}」的內容描述，並**只推薦來自上述列表的 {top_n} 部電影**，同時解釋推薦原因。\n"
+    
     model = genai.GenerativeModel("gemini-2.0-flash")
-    response = model.generate_content(context + f"\n\n請分析電影「{movie_name}」的內容描述（movie_description），提取關鍵要素，例如：主題、劇情內容等。然後根據這些特徵，推薦最相似的 {top_n} 部電影，並解釋為何這些電影與原電影相似。")
+    response = model.generate_content(context, stream=True)
+    
+    for chunk in response:
+        if chunk and getattr(chunk, "text", None):  # 確保 chunk 存在且 chunk.text 存在
+            text = chunk.text.strip()
+            if text:
+                print(text, end="", flush=True)
+    
+    print("\n")  # 確保最後換行
 
-    return response.text
+
+
+
 
 # **啟動對話模式**
 chat_with_gemini()
